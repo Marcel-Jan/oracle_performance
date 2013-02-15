@@ -8,3 +8,4 @@ Scripts in this repository
 * trace_column.sql - If you quickly need to trace one or more sessions based on username, program or whatever in v$session.
 * ora1555.sql - Use this to find out information about SQL's mentioned in ORA-1555 messages.
 * top10sql_plan.sql - Show the 10 SQL statements in the shared pool
+* top10sql_plan9i.sql - Still had this somewhere. You'll never know when it comes in handy, although hopefully not ;)
