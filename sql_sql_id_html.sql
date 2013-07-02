@@ -15,9 +15,14 @@
 --      Version When        Who            What?
 --      ------- ----------- -------------- ----------------------------------------------------------------------------------------------
 --      1.0     10 apr 2013 M. Krijgsman   First version, based on sql_sql_id.sql version 1.9
+--      1.1     21 mei 2013 M. Krijgsman   Better graph, query statistics from AWR, neater representation of v$sql_shared_cursor.
+--      1.2     24 jun 2013 M. Krijgsman   Query statistics from AWR. sqlplus settings saved with datetime in filename.
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
-store set your_sqlplus_env.sql REPLACE
+column v_datetime    new_value datetime       noprint
+select to_char(sysdate, 'YYYYMMDDHH24MISS') v_datetime from dual;
+
+store set your_sqlplus_env_&datetime..sql REPLACE
 
 set linesize 3000
 set feedback off
@@ -32,10 +37,9 @@ set newpage none
 set define on
 
 column vl_dbname     new_value l_dbname       noprint
-column v_datetime    new_value datetime       noprint
 
 select lower(name) vl_dbname from v$database;
-select to_char(sysdate, 'YYYYMMDDHH24MISS') v_datetime from dual;
+
 
 prompt =============================================
 prompt =                                           =
@@ -141,6 +145,7 @@ prompt    table             {font:9pt Courier New, Courier; color:Black; backgro
 prompt    th                {font:bold 9pt  Arial,Helvetica,sans-serif; color:#314299; background:#befdfd;}
 prompt    h1                {font:bold 12pt Arial,Helvetica,sans-serif; color:#003399; background-color:White;}
 prompt    h2                {font:bold 10pt Arial,Helvetica,sans-serif; color:#FF9933; background-color:White;}
+prompt    h4                {font:bold 9pt Arial,Helvetica,sans-serif; color:Grey; background-color:White;}
 prompt    a                 {font:9pt Arial,Helvetica,sans-serif; color:#0F0066; margin-top:0pt; margin-bottom:0pt; vertical-align:top;}
 prompt    a.link            {font:9pt Arial,Helvetica,sans-serif; color:#0F0066; margin-top:0pt; margin-bottom:0pt; vertical-align:top;}
 prompt    a.noLink          {font:9pt Arial,Helvetica,sans-serif; color:#0F0066; text-decoration: none; margin-top:0pt; margin-bottom:0pt; vertical-align:top;}
@@ -154,46 +159,77 @@ prompt  </STYLE>
 
 prompt    <script type="text/javascript" src="https://www.google.com/jsapi"></script>
 prompt    <script type="text/javascript">
-prompt      google.load("visualization", "1", {packages:["corechart"]});
-prompt      google.setOnLoadCallback(drawChart);
-prompt      function drawChart() {
-prompt        var data = google.visualization.arrayToDataTable([
-prompt          ['Date', 'Executions', 'Responsetime']
+prompt    google.load("visualization", "1", {packages:["corechart"]})
+prompt    google.setOnLoadCallback(drawChart)
+prompt    function drawChart() {
+prompt    var data = new google.visualization.DataTable();
+prompt        data.addColumn('datetime', 'Date');
+prompt        data.addColumn('number', 'Executions');
+prompt        data.addColumn('number', 'ResponseTime');
+prompt        data.addRows([
+
+col rownr for a1
+
 select
-',['''||
-	BEGIN_INTERVAL_TIME
-||''','||
-	EXECUTIONS
-||','||
-	RESPONSETIME
-||']'
-from	(select trunc(a.BEGIN_INTERVAL_TIME, 'HH24') BEGIN_INTERVAL_TIME
- , sum(b.executions_delta) executions
- , round(sum(b.ELAPSED_TIME_DELTA)/decode(sum(b.EXECUTIONS_DELTA),0,1,sum(b.EXECUTIONS_DELTA))/1000000,2) responsetime 
-from   dba_hist_snapshot a, 
+   decode(rownum,1,'',',') rownr,
+   '[new Date('||
+   	to_char(ADD_MONTHS(BEGIN_INTERVAL_TIME,-1), 'YYYY,MM,DD,HH24,MI,SS')
+   ||'),'||
+   	EXECUTIONS
+   ||','||
+   	RESPONSETIME
+   ||']' rowofdata
+   from	(select trunc(a.BEGIN_INTERVAL_TIME, 'HH24') BEGIN_INTERVAL_TIME
+    , sum(b.executions_delta) executions
+    , round(sum(b.ELAPSED_TIME_DELTA)/decode(sum(b.EXECUTIONS_DELTA),0,1,sum(b.EXECUTIONS_DELTA))/1000000,2) responsetime 
+   from   dba_hist_snapshot a, 
        dba_hist_sqlstat b 
-where  a.snap_id=b.snap_id 
-and    a.instance_number=b.instance_number
-and    b.sql_id='&sql_id' 
-group by trunc(a.BEGIN_INTERVAL_TIME, 'HH24')
-order by trunc(a.BEGIN_INTERVAL_TIME, 'HH24'))
-;
+   where  a.snap_id=b.snap_id 
+   and    a.instance_number=b.instance_number
+   and    b.sql_id='&sql_id' 
+   group by trunc(a.BEGIN_INTERVAL_TIME, 'HH24')
+   order by trunc(a.BEGIN_INTERVAL_TIME, 'HH24'));
+
 prompt        ]);
 prompt
+
 prompt var options = {
-prompt title: 'Response time',
-prompt chxt: 'x,y,r',
-prompt width: 1600,
-prompt titleTextStyle: {color: 'black'},
-prompt isStacked: true
-prompt              }
+prompt     curveType: "function",
+prompt     width: 1300,
+prompt     titleTextStyle: {color: 'black'},
+prompt     isStacked: true,
+prompt     vAxes: {
+prompt                     0: {logScale: false, title: 'Executions', viewWindow:{min: 0} },
+prompt                     1: {logScale: false, title: 'ResponseTime', textStyle:{color: 'red'}, viewWindow:{min: 0} } 
+prompt                 },
+prompt     series:{
+prompt                     0:{targetAxisIndex:0},
+prompt                     1:{targetAxisIndex:1}
+prompt                 },
+prompt     title: 'Response time',
+prompt     hAxis: {title: 'Date', gridlines: {color: 'green', count: 2}, minorGridlines: {color: 'blue', count: 2}, format: 'dd-MM hh:mm' }
+prompt };
 prompt
-prompt        var chart = new google.visualization.LineChart(document.getElementById('chart_div'));
-prompt        chart.draw(data, options);
-prompt      }
-prompt
+prompt var chart = new google.visualization.LineChart(document.getElementById('chart_div'))
+prompt chart.draw(data, options)
+prompt }
+
+-- /*prompt var options = {
+-- prompt title: 'Response time',
+-- prompt chxt: 'x,y,r',
+-- prompt width: 1600,
+-- prompt titleTextStyle: {color: 'black'},
+-- prompt isStacked: true
+-- prompt              }
+-- prompt
+-- prompt        var chart = new google.visualization.LineChart(document.getElementById('chart_div'));
+-- prompt        chart.draw(data, options);
+-- prompt      }
+-- prompt
+
 prompt    </script>
 prompt  </head>
+
 
 prompt <body text="#000000" bgcolor="#FFFFFF" link="#0000FF"
 prompt    vlink="#000080" alink="#FF0000">
@@ -210,7 +246,7 @@ set markup HTML ON ENTMAP OFF
 prompt <h1>SQL report, based on sql_id.</h1>
 prompt <p>This file was created with:
 prompt sql_sql_id_html.sql
-prompt version 1.0 (2013)
+prompt version 1.2 (2013)
 prompt 
 prompt dbname: &l_dbname
 prompt SQL_ID: &sql_id
@@ -231,6 +267,17 @@ col instance_name for a20
 col status for a20
 
 select instance_name, instance_number, status 
+from v$instance;
+
+
+prompt
+prompt
+prompt
+set markup HTML ON ENTMAP OFF
+prompt <h2>Selected sql_id and child_number.</h2>
+set markup HTML ON ENTMAP ON
+
+select instance_name, '&sql_id' sql_id, '&childnr' childnr
 from v$instance;
 
 
@@ -271,10 +318,13 @@ set markup HTML ON ENTMAP ON
 col last_active_time for a16
 col last_load_time for a20
 
-select sql_id, child_number, inst_id, last_load_time
-,      hash_value, old_hash_value, plan_hash_value
-from gv$sql
-where sql_id='&sql_id';
+select a.sql_id, a.child_number
+, (select instance_name 
+         from gv$instance 
+         where instance_number=a.inst_id) instance_name
+,      a.hash_value, a.old_hash_value, a.plan_hash_value
+from gv$sql a
+where a.sql_id='&sql_id';
 
 prompt
 prompt
@@ -284,6 +334,7 @@ prompt <h2>Full text of the query (up to 50000 characters).</h2>
 set markup HTML ON ENTMAP ON
 
 set long 50000
+col sql_fulltext for a1000
 
 select sql_fulltext
 from v$sql
@@ -494,243 +545,34 @@ where sql_id = '&sql_id'
 order by inst_id, child_number;
 
 
+
 prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Bind mismatches (10.2)</h2>
-prompt <p>(If an ORA-00904 occurs, this wasn't a 10.2 database)</p>  -- '
+prompt <h2>Bind mismatches.</h2>
 set markup HTML ON ENTMAP ON
 
-SELECT substr(version, 1, instr(version, '.', 1,2)-1) version
-FROM PRODUCT_COMPONENT_VERSION
-where product like '%Database%';
+select *
+from
+  xmltable( 'for $a at $i in /ROWSET/ROW
+            ,$r in $a/*
+              return element ROW{
+                   element ROW_NUM{$i}
+                  ,element COL_NAME{$r/name()}
+                  ,element COL_VALUE{$r/text()}
+              }'
+            passing xmltype(cursor( select * 
+                                    from   v$sql_shared_cursor 
+                                    where  sql_id='&sql_id'
+                                    and    child_number=&childnr
+            ))
+            columns
+              row_num   int
+             ,col_name  varchar2(30)
+             ,col_value varchar2(100)
+  );
 
-set heading off
-set linesize 80
-
-set markup HTML OFF ENTMAP OFF
-prompt <pre xml:space="preserve" class="oac_no_warn">
-SELECT           'UNBOUND_CURSOR:            '||SUM(TO_NUMBER(DECODE(unbound_cursor,'Y',1,'N','0'))),
-                 'SQL_TYPE_MISMATCH:         '||SUM(TO_NUMBER(DECODE(sql_type_mismatch,'Y',1,'N','0'))),
-                 'OPTIMIZER_MISMATCH:        '||SUM(TO_NUMBER(DECODE(optimizer_mismatch,'Y',1,'N','0'))),
-                 'OUTLINE_MISMATCH:          '||SUM(TO_NUMBER(DECODE(outline_mismatch,'Y',1,'N','0'))),
-                 'STATS_ROW_MISMATCH:        '||SUM(TO_NUMBER(DECODE(stats_row_mismatch,'Y',1,'N','0'))),
-                 'LITERAL_MISMATCH:          '||SUM(TO_NUMBER(DECODE(literal_mismatch,'Y',1,'N','0'))),
-                 'SEC_DEPTH_MISMATCH:        '||SUM(TO_NUMBER(DECODE(sec_depth_mismatch,'Y',1,'N','0'))),
-                 'EXPLAIN_PLAN_CURSOR:       '||SUM(TO_NUMBER(DECODE(explain_plan_cursor,'Y',1,'N','0'))),
-                 'BUFFERED_DML_MISMATCH:     '||SUM(TO_NUMBER(DECODE(buffered_dml_mismatch,'Y',1,'N','0'))),
-                 'PDML_ENV_MISMATCH:         '||SUM(TO_NUMBER(DECODE(pdml_env_mismatch,'Y',1,'N','0'))),
-                 'INST_DRTLD_MISMATCH:       '||SUM(TO_NUMBER(DECODE(inst_drtld_mismatch,'Y',1,'N','0'))),
-                 'SLAVE_QC_MISMATCH:         '||SUM(TO_NUMBER(DECODE(slave_qc_mismatch,'Y',1,'N','0'))),
-                 'TYPECHECK_MISMATCH:        '||SUM(TO_NUMBER(DECODE(typecheck_mismatch,'Y',1,'N','0'))),
-                 'AUTH_CHECK_MISMATCH:       '||SUM(TO_NUMBER(DECODE(auth_check_mismatch,'Y',1,'N','0'))),
-                 'BIND_MISMATCH:             '||SUM(TO_NUMBER(DECODE(bind_mismatch,'Y',1,'N','0'))),
-                 'DESCRIBE_MISMATCH:         '||SUM(TO_NUMBER(DECODE(describe_mismatch,'Y',1,'N','0'))),
-                 'LANGUAGE_MISMATCH:         '||SUM(TO_NUMBER(DECODE(language_mismatch,'Y',1,'N','0'))),
-                 'TRANSLATION_MISMATCH:      '||SUM(TO_NUMBER(DECODE(translation_mismatch,'Y',1,'N','0'))),
-                 'ROW_LEVEL_SEC_MISMATCH:    '||SUM(TO_NUMBER(DECODE(row_level_sec_mismatch,'Y',1,'N','0'))),
-                 'ROW_LEVEL_SEC_MISMATCH:    '||SUM(TO_NUMBER(DECODE(insuff_privs,'Y',1,'N','0'))),
-                 'INSUFF_PRIVS_REM:          '||SUM(TO_NUMBER(DECODE(insuff_privs_rem,'Y',1,'N','0'))),
-                 'REMOTE_TRANS_MISMATCH:     '||SUM(TO_NUMBER(DECODE(remote_trans_mismatch,'Y',1,'N','0'))),
-                 'LOGMINER_SESSION_MISMATCH: '||SUM(TO_NUMBER(DECODE(logminer_session_mismatch,'Y',1,'N','0'))),
-                 'INCOMP_LTRL_MISMATCH:      '||SUM(TO_NUMBER(DECODE(incomp_ltrl_mismatch,'Y',1,'N','0'))),
-                 'OVERLAP_TIME_MISMATCH:     '||SUM(TO_NUMBER(DECODE(overlap_time_mismatch,'Y',1,'N','0'))),
-                 'SQL_REDIRECT_MISMATCH:     '||SUM(TO_NUMBER(DECODE(sql_redirect_mismatch,'Y',1,'N','0'))),
-                 'MV_QUERY_GEN_MISMATCH:     '||SUM(TO_NUMBER(DECODE(mv_query_gen_mismatch,'Y',1,'N','0'))),
-                 'USER_BIND_PEEK_MISMATCH:   '||SUM(TO_NUMBER(DECODE(user_bind_peek_mismatch,'Y',1,'N','0'))),
-                 'TYPCHK_DEP_MISMATCH:       '||SUM(TO_NUMBER(DECODE(typchk_dep_mismatch,'Y',1,'N','0'))),
-                 'NO_TRIGGER_MISMATCH:       '||SUM(TO_NUMBER(DECODE(no_trigger_mismatch,'Y',1,'N','0'))),
-                 'FLASHBACK_CURSOR:          '||SUM(TO_NUMBER(DECODE(flashback_cursor,'Y',1,'N','0'))),
-                 'ANYDATA_TRANSFORMATION:    '||SUM(TO_NUMBER(DECODE(anydata_transformation,'Y',1,'N','0'))),
-                 'INCOMPLETE_CURSOR:         '||SUM(TO_NUMBER(DECODE(incomplete_cursor,'Y',1,'N','0'))),
-                 'TOP_LEVEL_RPI_CURSOR:      '||SUM(TO_NUMBER(DECODE(top_level_rpi_cursor,'Y',1,'N','0'))),
-                 'DIFFERENT_LONG_LENGTH:     '||SUM(TO_NUMBER(DECODE(different_long_length,'Y',1,'N','0'))),
-                 'LOGICAL_STANDBY_APPLY:     '||SUM(TO_NUMBER(DECODE(logical_standby_apply,'Y',1,'N','0'))),
-                 'LOGICAL_STANDBY_APPLY:     '||SUM(TO_NUMBER(DECODE(diff_call_durn,'Y',1,'N','0'))),
-                 'BIND_UACS_DIFF:            '||SUM(TO_NUMBER(DECODE(bind_uacs_diff,'Y',1,'N','0'))),
-                 'PLSQL_CMP_SWITCHS_DIFF:    '||SUM(TO_NUMBER(DECODE(plsql_cmp_switchs_diff,'Y',1,'N','0'))),
-                 'CURSOR_PARTS_MISMATCH:     '||SUM(TO_NUMBER(DECODE(cursor_parts_mismatch,'Y',1,'N','0'))),
-                 'STB_OBJECT_MISMATCH:       '||SUM(TO_NUMBER(DECODE(stb_object_mismatch,'Y',1,'N','0'))),
-                 'ROW_SHIP_MISMATCH:         '||SUM(TO_NUMBER(DECODE(row_ship_mismatch,'Y',1,'N','0'))),
-                 'PQ_SLAVE_MISMATCH:         '||SUM(TO_NUMBER(DECODE(pq_slave_mismatch,'Y',1,'N','0'))),
-                 'TOP_LEVEL_DDL_MISMATCH:    '||SUM(TO_NUMBER(DECODE(top_level_ddl_mismatch,'Y',1,'N','0'))),
-                 'MULTI_PX_MISMATCH:         '||SUM(TO_NUMBER(DECODE(multi_px_mismatch,'Y',1,'N','0'))),
-                 'BIND_PEEKED_PQ_MISMATCH:   '||SUM(TO_NUMBER(DECODE(bind_peeked_pq_mismatch,'Y',1,'N','0'))),
-                 'MV_REWRITE_MISMATCH:       '||SUM(TO_NUMBER(DECODE(mv_rewrite_mismatch,'Y',1,'N','0'))),
-                 'ROLL_INVALID_MISMATCH:     '||SUM(TO_NUMBER(DECODE(roll_invalid_mismatch,'Y',1,'N','0'))),
-                 'OPTIMIZER_MODE_MISMATCH:   '||SUM(TO_NUMBER(DECODE(optimizer_mode_mismatch,'Y',1,'N','0'))),
-                 'PX_MISMATCH:               '||SUM(TO_NUMBER(DECODE(px_mismatch,'Y',1,'N','0'))),
-                 'MV_STALEOBJ_MISMATCH:      '||SUM(TO_NUMBER(DECODE(mv_staleobj_mismatch,'Y',1,'N','0'))),
-                 'FLASHBACK_TABLE_MISMATCH:  '||SUM(TO_NUMBER(DECODE(flashback_table_mismatch,'Y',1,'N','0'))),
-                 'LITREP_COMP_MISMATCH:      '||SUM(TO_NUMBER(DECODE(litrep_comp_mismatch,'Y',1,'N','0')))
-FROM   v$sql_shared_cursor
-WHERE  address IN (SELECT address
-                   FROM   v$sqlarea
-                   WHERE  sql_id = '&sql_id')
-/
-
-prompt </pre>
-
-prompt
-prompt
-prompt
-set markup HTML ON ENTMAP OFF
-prompt <h2>Bind mismatches (11.1)</h2>
-prompt <p>(If an ORA-00904 occurs, this wasn't a 11.1 database)</p> -- '
-set markup HTML OFF ENTMAP OFF
-
-prompt <pre xml:space="preserve" class="oac_no_warn">
-SELECT           'UNBOUND_CURSOR:                '||SUM(TO_NUMBER(DECODE(unbound_cursor,'Y',1,'N','0'))),
-                 'SQL_TYPE_MISMATCH:             '||SUM(TO_NUMBER(DECODE(sql_type_mismatch,'Y',1,'N','0'))),
-                 'OPTIMIZER_MISMATCH:            '||SUM(TO_NUMBER(DECODE(optimizer_mismatch,'Y',1,'N','0'))),
-                 'OUTLINE_MISMATCH:              '||SUM(TO_NUMBER(DECODE(outline_mismatch,'Y',1,'N','0'))),
-                 'STATS_ROW_MISMATCH:            '||SUM(TO_NUMBER(DECODE(stats_row_mismatch,'Y',1,'N','0'))),
-                 'LITERAL_MISMATCH:              '||SUM(TO_NUMBER(DECODE(literal_mismatch,'Y',1,'N','0'))),
-                 'FORCE_HARD_PARSE:              '||SUM(TO_NUMBER(DECODE(force_hard_parse,'Y',1,'N','0'))),
-                 'EXPLAIN_PLAN_CURSOR:           '||SUM(TO_NUMBER(DECODE(explain_plan_cursor,'Y',1,'N','0'))),
-                 'BUFFERED_DML_MISMATCH:         '||SUM(TO_NUMBER(DECODE(buffered_dml_mismatch,'Y',1,'N','0'))),
-                 'PDML_ENV_MISMATCH:             '||SUM(TO_NUMBER(DECODE(pdml_env_mismatch,'Y',1,'N','0'))),
-                 'INST_DRTLD_MISMATCH:           '||SUM(TO_NUMBER(DECODE(inst_drtld_mismatch,'Y',1,'N','0'))),
-                 'SLAVE_QC_MISMATCH:             '||SUM(TO_NUMBER(DECODE(slave_qc_mismatch,'Y',1,'N','0'))),
-                 'TYPECHECK_MISMATCH:            '||SUM(TO_NUMBER(DECODE(typecheck_mismatch,'Y',1,'N','0'))),
-                 'AUTH_CHECK_MISMATCH:           '||SUM(TO_NUMBER(DECODE(auth_check_mismatch,'Y',1,'N','0'))),
-                 'BIND_MISMATCH:                 '||SUM(TO_NUMBER(DECODE(bind_mismatch,'Y',1,'N','0'))),
-                 'DESCRIBE_MISMATCH:             '||SUM(TO_NUMBER(DECODE(describe_mismatch,'Y',1,'N','0'))),
-                 'LANGUAGE_MISMATCH:             '||SUM(TO_NUMBER(DECODE(language_mismatch,'Y',1,'N','0'))),
-                 'TRANSLATION_MISMATCH:          '||SUM(TO_NUMBER(DECODE(translation_mismatch,'Y',1,'N','0'))),
-                 'ROW_LEVEL_SEC_MISMATCH:        '||SUM(TO_NUMBER(DECODE(row_level_sec_mismatch,'Y',1,'N','0'))),
-                 'INSUFF_PRIVS:                  '||SUM(TO_NUMBER(DECODE(insuff_privs,'Y',1,'N','0'))),
-                 'INSUFF_PRIVS_REM:              '||SUM(TO_NUMBER(DECODE(insuff_privs_rem,'Y',1,'N','0'))),
-                 'REMOTE_TRANS_MISMATCH:         '||SUM(TO_NUMBER(DECODE(remote_trans_mismatch,'Y',1,'N','0'))),
-                 'LOGMINER_SESSION_MISMATCH:     '||SUM(TO_NUMBER(DECODE(logminer_session_mismatch,'Y',1,'N','0'))),
-                 'INCOMP_LTRL_MISMATCH:          '||SUM(TO_NUMBER(DECODE(incomp_ltrl_mismatch,'Y',1,'N','0'))),
-                 'OVERLAP_TIME_MISMATCH:         '||SUM(TO_NUMBER(DECODE(overlap_time_mismatch,'Y',1,'N','0'))),
-                 'EDITION_MISMATCH:              '||SUM(TO_NUMBER(DECODE(edition_mismatch,'Y',1,'N','0'))),
-                 'MV_QUERY_GEN_MISMATCH:         '||SUM(TO_NUMBER(DECODE(mv_query_gen_mismatch,'Y',1,'N','0'))),
-                 'USER_BIND_PEEK_MISMATCH:       '||SUM(TO_NUMBER(DECODE(user_bind_peek_mismatch,'Y',1,'N','0'))),
-                 'TYPCHK_DEP_MISMATCH:           '||SUM(TO_NUMBER(DECODE(typchk_dep_mismatch,'Y',1,'N','0'))),
-                 'NO_TRIGGER_MISMATCH:           '||SUM(TO_NUMBER(DECODE(no_trigger_mismatch,'Y',1,'N','0'))),
-                 'FLASHBACK_CURSOR:              '||SUM(TO_NUMBER(DECODE(flashback_cursor,'Y',1,'N','0'))),
-                 'ANYDATA_TRANSFORMATION:        '||SUM(TO_NUMBER(DECODE(anydata_transformation,'Y',1,'N','0'))),
-                 'INCOMPLETE_CURSOR:             '||SUM(TO_NUMBER(DECODE(incomplete_cursor,'Y',1,'N','0'))),
-                 'TOP_LEVEL_RPI_CURSOR:          '||SUM(TO_NUMBER(DECODE(top_level_rpi_cursor,'Y',1,'N','0'))),
-                 'DIFFERENT_LONG_LENGTH:         '||SUM(TO_NUMBER(DECODE(different_long_length,'Y',1,'N','0'))),
-                 'LOGICAL_STANDBY_APPLY:         '||SUM(TO_NUMBER(DECODE(logical_standby_apply,'Y',1,'N','0'))),
-                 'DIFF_CALL_DURN:                '||SUM(TO_NUMBER(DECODE(diff_call_durn,'Y',1,'N','0'))),
-                 'BIND_UACS_DIFF:                '||SUM(TO_NUMBER(DECODE(bind_uacs_diff,'Y',1,'N','0'))),
-                 'PLSQL_CMP_SWITCHS_DIFF:        '||SUM(TO_NUMBER(DECODE(plsql_cmp_switchs_diff,'Y',1,'N','0'))),
-                 'CURSOR_PARTS_MISMATCH:         '||SUM(TO_NUMBER(DECODE(cursor_parts_mismatch,'Y',1,'N','0'))),
-                 'STB_OBJECT_MISMATCH:           '||SUM(TO_NUMBER(DECODE(stb_object_mismatch,'Y',1,'N','0'))),
-                 'CROSSEDITION_TRIGGER_MISMATCH: '||SUM(TO_NUMBER(DECODE(crossedition_trigger_mismatch,'Y',1,'N','0'))),
-                 'PQ_SLAVE_MISMATCH:             '||SUM(TO_NUMBER(DECODE(pq_slave_mismatch,'Y',1,'N','0'))),
-                 'TOP_LEVEL_DDL_MISMATCH:        '||SUM(TO_NUMBER(DECODE(top_level_ddl_mismatch,'Y',1,'N','0'))),
-                 'MULTI_PX_MISMATCH:             '||SUM(TO_NUMBER(DECODE(multi_px_mismatch,'Y',1,'N','0'))),
-                 'BIND_PEEKED_PQ_MISMATCH:       '||SUM(TO_NUMBER(DECODE(bind_peeked_pq_mismatch,'Y',1,'N','0'))),
-                 'MV_REWRITE_MISMATCH:           '||SUM(TO_NUMBER(DECODE(mv_rewrite_mismatch,'Y',1,'N','0'))),
-                 'ROLL_INVALID_MISMATCH:         '||SUM(TO_NUMBER(DECODE(roll_invalid_mismatch,'Y',1,'N','0'))),
-                 'OPTIMIZER_MODE_MISMATCH:       '||SUM(TO_NUMBER(DECODE(optimizer_mode_mismatch,'Y',1,'N','0'))),
-                 'PX_MISMATCH:                   '||SUM(TO_NUMBER(DECODE(px_mismatch,'Y',1,'N','0'))),
-                 'MV_STALEOBJ_MISMATCH:          '||SUM(TO_NUMBER(DECODE(mv_staleobj_mismatch,'Y',1,'N','0'))),
-                 'FLASHBACK_TABLE_MISMATCH:      '||SUM(TO_NUMBER(DECODE(flashback_table_mismatch,'Y',1,'N','0'))),
-                 'LITREP_COMP_MISMATCH:          '||SUM(TO_NUMBER(DECODE(litrep_comp_mismatch,'Y',1,'N','0'))),
-                 'PLSQL_DEBUG:                   '||SUM(TO_NUMBER(DECODE(plsql_debug,'Y',1,'N','0'))),
-                 'LOAD_OPTIMIZER_STATS:          '||SUM(TO_NUMBER(DECODE(load_optimizer_stats,'Y',1,'N','0'))),
-                 'ACL_MISMATCH:                  '||SUM(TO_NUMBER(DECODE(acl_mismatch,'Y',1,'N','0'))),
-                 'FLASHBACK_ARCHIVE_MISMATCH:    '||SUM(TO_NUMBER(DECODE(flashback_archive_mismatch,'Y',1,'N','0'))),
-                 'LOCK_USER_SCHEMA_FAILED:       '||SUM(TO_NUMBER(DECODE(lock_user_schema_failed,'Y',1,'N','0'))),
-                 'REMOTE_MAPPING_MISMATCH:       '||SUM(TO_NUMBER(DECODE(remote_mapping_mismatch,'Y',1,'N','0'))),
-                 'LOAD_RUNTIME_HEAP_FAILED:      '||SUM(TO_NUMBER(DECODE(load_runtime_heap_failed,'Y',1,'N','0'))),
-                 'HASH_MATCH_FAILED:             '||SUM(TO_NUMBER(DECODE(hash_match_failed,'Y',1,'N','0')))
-FROM   v$sql_shared_cursor
-WHERE  address IN (SELECT address
-                   FROM   v$sqlarea
-                   WHERE  sql_id = '&sql_id')
-/
-prompt </pre>
-
-prompt
-prompt
-prompt
-set markup HTML ON ENTMAP OFF
-prompt <h2>Bind mismatches (11.2)</h2>
-prompt <p>(If an ORA-00904 occurs, this wasn't a 11.2 database)</p>  -- '
-
-set markup HTML OFF ENTMAP OFF
-prompt <pre xml:space="preserve" class="oac_no_warn">
-SELECT           'UNBOUND_CURSOR:                 '||SUM(TO_NUMBER(DECODE(unbound_cursor,'Y',1,'N','0'))),
-                 'SQL_TYPE_MISMATCH:              '||SUM(TO_NUMBER(DECODE(sql_type_mismatch,'Y',1,'N','0'))),
-                 'OPTIMIZER_MISMATCH:             '||SUM(TO_NUMBER(DECODE(optimizer_mismatch,'Y',1,'N','0'))),
-                 'OUTLINE_MISMATCH:               '||SUM(TO_NUMBER(DECODE(outline_mismatch,'Y',1,'N','0'))),
-                 'STATS_ROW_MISMATCH:             '||SUM(TO_NUMBER(DECODE(stats_row_mismatch,'Y',1,'N','0'))),
-                 'LITERAL_MISMATCH:               '||SUM(TO_NUMBER(DECODE(literal_mismatch,'Y',1,'N','0'))),
-                 'FORCE_HARD_PARSE:               '||SUM(TO_NUMBER(DECODE(force_hard_parse,'Y',1,'N','0'))),
-                 'EXPLAIN_PLAN_CURSOR:            '||SUM(TO_NUMBER(DECODE(explain_plan_cursor,'Y',1,'N','0'))),
-                 'BUFFERED_DML_MISMATCH:          '||SUM(TO_NUMBER(DECODE(buffered_dml_mismatch,'Y',1,'N','0'))),
-                 'PDML_ENV_MISMATCH:              '||SUM(TO_NUMBER(DECODE(pdml_env_mismatch,'Y',1,'N','0'))),
-                 'INST_DRTLD_MISMATCH:            '||SUM(TO_NUMBER(DECODE(inst_drtld_mismatch,'Y',1,'N','0'))),
-                 'SLAVE_QC_MISMATCH:              '||SUM(TO_NUMBER(DECODE(slave_qc_mismatch,'Y',1,'N','0'))),
-                 'TYPECHECK_MISMATCH:             '||SUM(TO_NUMBER(DECODE(typecheck_mismatch,'Y',1,'N','0'))),
-                 'AUTH_CHECK_MISMATCH:            '||SUM(TO_NUMBER(DECODE(auth_check_mismatch,'Y',1,'N','0'))),
-                 'BIND_MISMATCH:                  '||SUM(TO_NUMBER(DECODE(bind_mismatch,'Y',1,'N','0'))),
-                 'DESCRIBE_MISMATCH:              '||SUM(TO_NUMBER(DECODE(describe_mismatch,'Y',1,'N','0'))),
-                 'LANGUAGE_MISMATCH:              '||SUM(TO_NUMBER(DECODE(language_mismatch,'Y',1,'N','0'))),
-                 'TRANSLATION_MISMATCH:           '||SUM(TO_NUMBER(DECODE(translation_mismatch,'Y',1,'N','0'))),
-                 'BIND_EQUIV_FAILURE:             '||SUM(TO_NUMBER(DECODE(bind_equiv_failure,'Y',1,'N','0'))),
-                 'INSUFF_PRIVS:                   '||SUM(TO_NUMBER(DECODE(insuff_privs,'Y',1,'N','0'))),
-                 'INSUFF_PRIVS_REM:               '||SUM(TO_NUMBER(DECODE(insuff_privs_rem,'Y',1,'N','0'))),
-                 'REMOTE_TRANS_MISMATCH:          '||SUM(TO_NUMBER(DECODE(remote_trans_mismatch,'Y',1,'N','0'))),
-                 'LOGMINER_SESSION_MISMATCH:      '||SUM(TO_NUMBER(DECODE(logminer_session_mismatch,'Y',1,'N','0'))) ,
-                 'INCOMP_LTRL_MISMATCH:           '||SUM(TO_NUMBER(DECODE(incomp_ltrl_mismatch,'Y',1,'N','0'))),
-                 'OVERLAP_TIME_MISMATCH:          '||SUM(TO_NUMBER(DECODE(overlap_time_mismatch,'Y',1,'N','0'))),
-                 'EDITION_MISMATCH:               '||SUM(TO_NUMBER(DECODE(edition_mismatch,'Y',1,'N','0'))),
-                 'MV_QUERY_GEN_MISMATCH:          '||SUM(TO_NUMBER(DECODE(mv_query_gen_mismatch,'Y',1,'N','0'))),
-                 'USER_BIND_PEEK_MISMATCH:        '||SUM(TO_NUMBER(DECODE(user_bind_peek_mismatch,'Y',1,'N','0'))),
-                 'TYPCHK_DEP_MISMATCH:            '||SUM(TO_NUMBER(DECODE(typchk_dep_mismatch,'Y',1,'N','0'))),
-                 'NO_TRIGGER_MISMATCH:            '||SUM(TO_NUMBER(DECODE(no_trigger_mismatch,'Y',1,'N','0'))),
-                 'FLASHBACK_CURSOR:               '||SUM(TO_NUMBER(DECODE(flashback_cursor,'Y',1,'N','0'))),
-                 'ANYDATA_TRANSFORMATION:         '||SUM(TO_NUMBER(DECODE(anydata_transformation,'Y',1,'N','0'))),
---                 'INCOMPLETE_CURSOR:              '||SUM(TO_NUMBER(DECODE(incomplete_cursor,'Y',1,'N','0'))),
-                 'TOP_LEVEL_RPI_CURSOR:           '||SUM(TO_NUMBER(DECODE(top_level_rpi_cursor,'Y',1,'N','0'))),
-                 'DIFFERENT_LONG_LENGTH:          '||SUM(TO_NUMBER(DECODE(different_long_length,'Y',1,'N','0'))),
-                 'LOGICAL_STANDBY_APPLY:          '||SUM(TO_NUMBER(DECODE(logical_standby_apply,'Y',1,'N','0'))),
-                 'DIFF_CALL_DURN:                 '||SUM(TO_NUMBER(DECODE(diff_call_durn,'Y',1,'N','0'))),
-                 'BIND_UACS_DIFF:                 '||SUM(TO_NUMBER(DECODE(bind_uacs_diff,'Y',1,'N','0'))),
-                 'PLSQL_CMP_SWITCHS_DIFF:         '||SUM(TO_NUMBER(DECODE(plsql_cmp_switchs_diff,'Y',1,'N','0'))),
-                 'CURSOR_PARTS_MISMATCH:          '||SUM(TO_NUMBER(DECODE(cursor_parts_mismatch,'Y',1,'N','0'))),
-                 'STB_OBJECT_MISMATCH:            '||SUM(TO_NUMBER(DECODE(stb_object_mismatch,'Y',1,'N','0'))),
-                 'CROSSEDITION_TRIGGER_MISMATCH : '||SUM(TO_NUMBER(DECODE(crossedition_trigger_mismatch,'Y',1,'N','0'))),
-                 'PQ_SLAVE_MISMATCH:              '||SUM(TO_NUMBER(DECODE(pq_slave_mismatch,'Y',1,'N','0'))),
-                 'TOP_LEVEL_DDL_MISMATCH:         '||SUM(TO_NUMBER(DECODE(top_level_ddl_mismatch,'Y',1,'N','0'))),
-                 'MULTI_PX_MISMATCH:              '||SUM(TO_NUMBER(DECODE(multi_px_mismatch,'Y',1,'N','0'))),
-                 'BIND_PEEKED_PQ_MISMATCH:        '||SUM(TO_NUMBER(DECODE(bind_peeked_pq_mismatch,'Y',1,'N','0'))),
-                 'MV_REWRITE_MISMATCH:            '||SUM(TO_NUMBER(DECODE(mv_rewrite_mismatch,'Y',1,'N','0'))),
-                 'ROLL_INVALID_MISMATCH:          '||SUM(TO_NUMBER(DECODE(roll_invalid_mismatch,'Y',1,'N','0'))),
-                 'OPTIMIZER_MODE_MISMATCH:        '||SUM(TO_NUMBER(DECODE(optimizer_mode_mismatch,'Y',1,'N','0'))),
-                 'PX_MISMATCH:                    '||SUM(TO_NUMBER(DECODE(px_mismatch,'Y',1,'N','0'))),
-                 'MV_STALEOBJ_MISMATCH:           '||SUM(TO_NUMBER(DECODE(mv_staleobj_mismatch,'Y',1,'N','0'))),
-                 'FLASHBACK_TABLE_MISMATCH:       '||SUM(TO_NUMBER(DECODE(flashback_table_mismatch,'Y',1,'N','0'))),
-                 'LITREP_COMP_MISMATCH:           '||SUM(TO_NUMBER(DECODE(litrep_comp_mismatch,'Y',1,'N','0'))),
-                 'PLSQL_DEBUG:                    '||SUM(TO_NUMBER(DECODE(plsql_debug,'Y',1,'N','0'))),
-                 'LOAD_OPTIMIZER_STATS:           '||SUM(TO_NUMBER(DECODE(load_optimizer_stats,'Y',1,'N','0'))),
-                 'ACL_MISMATCH:                   '||SUM(TO_NUMBER(DECODE(acl_mismatch,'Y',1,'N','0'))),
-                 'FLASHBACK_ARCHIVE_MISMATCH:     '||SUM(TO_NUMBER(DECODE(flashback_archive_mismatch,'Y',1,'N','0'))),
-                 'LOCK_USER_SCHEMA_FAILED:        '||SUM(TO_NUMBER(DECODE(lock_user_schema_failed,'Y',1,'N','0'))),
-                 'REMOTE_MAPPING_MISMATCH:        '||SUM(TO_NUMBER(DECODE(remote_mapping_mismatch,'Y',1,'N','0'))),
-                 'LOAD_RUNTIME_HEAP_FAILED:       '||SUM(TO_NUMBER(DECODE(load_runtime_heap_failed,'Y',1,'N','0'))),
-                 'HASH_MATCH_FAILED:              '||SUM(TO_NUMBER(DECODE(hash_match_failed,'Y',1,'N','0'))),
-                 'PURGED_CURSOR:                  '||SUM(TO_NUMBER(DECODE(purged_cursor,'Y',1,'N','0'))),
-                 'BIND_LENGTH_UPGRADEABLE:        '||SUM(TO_NUMBER(DECODE(bind_length_upgradeable,'Y',1,'N','0')))
-FROM   v$sql_shared_cursor
-WHERE  address IN (SELECT address
-                   FROM   v$sqlarea
-                   WHERE  sql_id = '&sql_id')
-/
-
-prompt </pre>
-
-set heading on
-set linesize 255
 
 prompt
 prompt
@@ -814,15 +656,31 @@ set markup HTML OFF ENTMAP OFF
 
 prompt <pre xml:space="preserve" class="oac_no_warn">
 SELECT plan_table_output
-FROM   TABLE(DBMS_XPLAN.DISPLAY_CURSOR('&sql_id', &childnr, 'TYPICAL'));
+FROM   TABLE(DBMS_XPLAN.DISPLAY_CURSOR('&sql_id', &childnr, 'ALL'));
 prompt </pre>
 
+prompt
+prompt
+prompt
+
 set markup HTML ON ENTMAP OFF
+
+
+prompt <h2>Execution plan of the query from AWR.</h2>
+set markup HTML OFF ENTMAP OFF
+
+prompt <pre xml:space="preserve" class="oac_no_warn">
+SELECT * FROM TABLE(dbms_xplan.display_awr('&sql_id', null, null,  'ALL'));
+prompt </pre>
+
 prompt
 prompt
+
+set markup HTML ON ENTMAP OFF
+
 prompt
 prompt <h2>All execution plans in sql plan baselines.</h2>
-prompt <p>Run as DBA to see this.</p>
+prompt <p>Run as SYS to see this.</p>
 set markup HTML ON ENTMAP ON
 
 column v_sql_handle     new_value l_sql_handle       noprint
@@ -882,6 +740,7 @@ and child_number=&childnr;
 prompt
 prompt
 
+
 prompt
 prompt
 prompt
@@ -900,7 +759,7 @@ select a.BEGIN_INTERVAL_TIME
  , b.PLAN_HASH_VALUE
  , b.FORCE_MATCHING_SIGNATURE
  , b.executions_delta
- , round(b.ELAPSED_TIME_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000,2) tijd 
+ , round(b.ELAPSED_TIME_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000,2) "Elapsed time (sec.)" 
 from   dba_hist_snapshot a, 
        dba_hist_sqlstat b 
 where  a.snap_id=b.snap_id 
@@ -908,6 +767,8 @@ and    a.instance_number=b.instance_number
 and    b.sql_id='&sql_id' 
 order by a.BEGIN_INTERVAL_TIME
 /
+
+
 
 prompt
 prompt
@@ -918,6 +779,142 @@ prompt <h2>Query response time graph.</h2>
 
 prompt <div id="chart_div" style="width: 700px; height: 500px;"></div>
 
+
+prompt
+prompt
+prompt
+set markup HTML ON ENTMAP OFF
+prompt <h2>Query statistics (AWR).</h2>
+
+prompt
+prompt
+set heading on
+
+prompt
+prompt <h4>Response time statistics.</h4>
+
+select a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
+, round(max(b.ELAPSED_TIME_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000),2) "MAX (sec)" 
+, round(min(b.ELAPSED_TIME_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000),2) "MIN (sec)" 
+, round(avg(b.ELAPSED_TIME_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000),2) "AVG (sec)" 
+, round(stddev(b.ELAPSED_TIME_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000),2) "STDDEV"
+, sum(b.executions_delta) "TOT EXECS"
+from   dba_hist_snapshot a, 
+       dba_hist_sqlstat b 
+where  a.snap_id=b.snap_id 
+and    a.instance_number=b.instance_number
+and    b.sql_id='&sql_id' 
+group by a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
+/
+
+prompt
+prompt <h4>Cost.</h4>
+
+
+
+
+select a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
+, max(OPTIMIZER_COST) "MAX COST"
+, min(OPTIMIZER_COST) "MIN COST"
+, sum(b.executions_delta) "TOT EXECS"
+from   dba_hist_snapshot a, 
+       dba_hist_sqlstat b 
+where  a.snap_id=b.snap_id 
+and    a.instance_number=b.instance_number
+and    b.sql_id='&sql_id' 
+group by a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
+/
+
+prompt
+prompt <h4>Modules and actions.</h4>
+
+
+select a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
+, b.MODULE
+, b.ACTION
+, sum(b.executions_delta) "TOT EXECS"
+from   dba_hist_snapshot a, 
+       dba_hist_sqlstat b 
+where  a.snap_id=b.snap_id 
+and    a.instance_number=b.instance_number
+and    b.sql_id='&sql_id' 
+group by a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE, b.MODULE, b.ACTION
+/
+
+prompt
+prompt <h4>Response time, broken up.</h4>
+
+
+select a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
+, round(sum(b.ELAPSED_TIME_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000),2) "ELAPSED (sec)" 
+, round(sum(b.CPU_TIME_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000),2) "CPU (sec)" 
+, round(sum(b.IOWAIT_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000),2) "IO WAIT (sec)" 
+, round(sum(b.APWAIT_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000),2) "APP WAIT (sec)" 
+, round(sum(b.CLWAIT_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000),2) "CLUSTER WAIT (sec)" 
+, round(sum(b.CCWAIT_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000),2) "CONCUR WAIT (sec)" 
+, sum(b.executions_delta) "TOT EXECS"
+from   dba_hist_snapshot a, 
+       dba_hist_sqlstat b 
+where  a.snap_id=b.snap_id 
+and    a.instance_number=b.instance_number
+and    b.sql_id='&sql_id' 
+group by a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
+/
+
+prompt
+prompt <h4>SQL Profiles, sharable memory, parses and executes.</h4>
+
+
+select a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
+, b.FORCE_MATCHING_SIGNATURE
+, b.SQL_PROFILE
+, sum(b.SHARABLE_MEM) "SHARABLE MEM"
+, sum(b.PARSE_CALLS_DELTA) "TOT PARSE"
+, sum(b.executions_delta) "TOT EXECS"
+from   dba_hist_snapshot a, 
+       dba_hist_sqlstat b 
+where  a.snap_id=b.snap_id 
+and    a.instance_number=b.instance_number
+and    b.sql_id='&sql_id' 
+group by a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE, b.FORCE_MATCHING_SIGNATURE, b.SQL_PROFILE
+order by a.INSTANCE_NUMBER
+/
+
+prompt
+prompt <h4>Buffer gets, disk reads, direct writes.</h4>
+
+
+
+select a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
+, sum(b.BUFFER_GETS_DELTA) "BUFFER GETS" 
+, sum(b.DISK_READS_DELTA) "DISK READS"
+, sum(b.DIRECT_WRITES_DELTA) "DIRECT WRITES"
+, sum(b.executions_delta) "TOT EXECS"
+from   dba_hist_snapshot a, 
+       dba_hist_sqlstat b 
+where  a.snap_id=b.snap_id 
+and    a.instance_number=b.instance_number
+and    b.sql_id='&sql_id' 
+group by a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
+/
+
+prompt
+prompt <h4>And the rest ;).</h4>
+
+select a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
+, sum(b.ROWS_PROCESSED_DELTA) "ROWS_PROCESSED"
+, sum(b.SORTS_DELTA) "SORTS"
+, sum(b.INVALIDATIONS_DELTA) "INVALIDATIONS"
+, sum(b.PX_SERVERS_EXECS_DELTA) "PX_SERVERS_EXECS"
+, sum(b.executions_delta) "TOT EXECS"
+from   dba_hist_snapshot a, 
+       dba_hist_sqlstat b 
+where  a.snap_id=b.snap_id 
+and    a.instance_number=b.instance_number
+and    b.sql_id='&sql_id' 
+group by a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
+order by a.INSTANCE_NUMBER
+/
 spool off
 
-@your_sqlplus_env.sql
+@/tmp/your_sqlplus_env_&datetime..sql
