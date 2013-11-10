@@ -16,7 +16,9 @@
 --      ------- ----------- -------------- ----------------------------------------------------------------------------------------------
 --      1.0     10 apr 2013 M. Krijgsman   First version, based on sql_sql_id.sql version 1.9
 --      1.1     21 mei 2013 M. Krijgsman   Better graph, query statistics from AWR, neater representation of v$sql_shared_cursor.
---      1.2     24 jun 2013 M. Krijgsman   Query statistics from AWR. sqlplus settings saved with datetime in filename.
+--      1.2     24 jun 2013 M. Krijgsman   Query statistics from AWR. sqlplus settings saved in /tmp
+--      1.3     25 okt 2013 M. Krijgsman   Table and index statistics for those that are found in the execution plan. Easier way
+--                                         to find what data you look for with a HTML menu
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 column v_datetime    new_value datetime       noprint
@@ -246,16 +248,95 @@ set markup HTML ON ENTMAP OFF
 prompt <h1>SQL report, based on sql_id.</h1>
 prompt <p>This file was created with:
 prompt sql_sql_id_html.sql
-prompt version 1.2 (2013)
+prompt version 1.3 (2013)
 prompt 
 prompt dbname: &l_dbname
 prompt SQL_ID: &sql_id
 prompt date:   &datetime
 prompt </p>
-set markup HTML ON ENTMAP ON
+set markup HTML OFF ENTMAP OFF
+
+
+prompt <center>
+prompt 	<font size="+2" face="Arial,Helvetica,Geneva,sans-serif" color="#314299"><b>Report Index</b></font>
+prompt 	<hr align="center" width="250">
+prompt
+prompt
+prompt <table width="90%" border="1">  
+prompt 	<tr><th colspan="4">Query and execution plan</th></tr>  
+prompt 	<tr>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#qversions">Different versions of the query</a></td>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#childs">Childs and hash values</a></td>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#sqltext">Full text of the query</a></td>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#sqltextawr">SQL text from AWR memory</a></td>  
+prompt 	</tr>  
+prompt  <tr><th colspan="4">SQL plan baselines and SQL profiles</th>
+prompt  </tr>
+prompt 	<tr>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#baselines">SQL and SQL plan baselines</a></td>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#blineinfo">SQL plan baseline info</a></td>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#sqlprofile">SQL profiles</a></td>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#sqlprofmeta">SQL profile metadata</a></td>  
+prompt 	</tr>  
+prompt 	<tr>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#profsnblines">SQL, profiles and baselines</a></td>  
+prompt 		<td nowrap align="center" width="25%"></td>  
+prompt 		<td nowrap align="center" width="25%"></td>  
+prompt 		<td nowrap align="center" width="25%"></td>  
+prompt 	</tr>
+prompt  <tr><th colspan="4">Run statistics</th>
+prompt  </tr>
+prompt 	<tr>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#execsnrows">Executions, number of rows</a></td>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#respcpuwait">Response time, cpu time and wait time</a></td>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#memndisk">Memory and disk reads</a></td>
+prompt 		<td nowrap align="center" width="25%"></td>  
+prompt 	</tr>
+prompt  <tr><th colspan="4">Binds</th>
+prompt  </tr>
+prompt 	<tr>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#bindaware">Bind awareness</a></td>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#adapcursh">Adaptive cursor sharing</a></td> 
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#bindmism">Bind mismatches</a></td>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#bindcontent">Content of bind variabeles</a></td>  
+prompt 	</tr>
+prompt 	<tr>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#bindsqlplus">Bind variables as SQL*Plus commands</a></td>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#bindsothers">Values of bind variables of other childs</a></td> 
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#blinedrop">Dropping associated SQL plan baselines</a></td>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#blinedrop">Purge the SQL statement from memory</a></td>  
+prompt 	</tr>
+prompt  <tr><th colspan="4">Object statistics</th>
+prompt  </tr>
+prompt 	<tr>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#tablestats">Table statistics</a></td>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#tablestathis">Table statistics history</a></td> 
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#tabparts">Table partitions</a></td>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#indexstats">Index statistics</a></td>
+prompt 	</tr>
+prompt 	<tr>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#indparts">Index partitions</a></td>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#indstathis">Index statistics history</a></td>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#indcolstats">Indexed column statistics</a></td>
+prompt 	</tr>
+prompt  <tr><th colspan="4">Response time history</th>
+prompt  </tr>
+prompt 	<tr>  
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#rtimehis">Response time history</a></td>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#rtimehisgraph">Response time history graph</a></td>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#rtimestats">AWR responsetime statistics</a></td>
+prompt 	</tr>
+prompt </table>
+prompt </center>  
+prompt 
+
 
 set heading on
+set markup HTML ON ENTMAP OFF
 
+prompt
+prompt
+prompt
 prompt
 prompt
 prompt
@@ -285,7 +366,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Different versions of the query.</h2>
+prompt <A NAME="qversions"></A><h2>Different versions of the query.</h2>
 prompt <p>(This should return only a handful of rows, or no binds have been used)</p>
 
 set markup HTML ON ENTMAP ON
@@ -312,7 +393,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Childs and hash values.</h2>
+prompt <A NAME="childs"></A><h2>Childs and hash values.</h2>
 set markup HTML ON ENTMAP ON
 
 col last_active_time for a16
@@ -330,7 +411,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Full text of the query (up to 50000 characters).</h2>
+prompt <A NAME="sqltext"></A><h2>Full text of the query (up to 50000 characters).</h2>
 set markup HTML ON ENTMAP ON
 
 set long 50000
@@ -345,7 +426,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>SQL text from AWR memory (just in case it is not in memory anymore.)</h2>
+prompt <A NAME="sqltextawr"></A><h2>SQL text from AWR memory (just in case it is not in memory anymore.)</h2>
 set markup HTML ON ENTMAP ON
 
 
@@ -357,7 +438,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>SQL vs. SQL Plan Baselines.</h2>
+prompt <A NAME="baselines"></A><h2>SQL vs. SQL Plan Baselines.</h2>
 set markup HTML ON ENTMAP ON
 
 col sql_id for a20
@@ -375,7 +456,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>SQL Plan Baseline information.</h2>
+prompt <A NAME="blineinfo"></A><h2>SQL Plan Baseline information.</h2>
 set markup HTML ON ENTMAP ON
 
 col SQL_HANDLE for a30
@@ -394,7 +475,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>SQL Profile information.</h2>
+prompt <A NAME="sqlprofile"></A><h2>SQL Profile information.</h2>
 set markup HTML ON ENTMAP ON
 
 col name for a30
@@ -413,7 +494,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>SQL Profile metadata.</h2>
+prompt <A NAME="sqlprofmeta"></A><h2>SQL Profile metadata.</h2>
 set markup HTML ON ENTMAP ON
 
 set heading off
@@ -434,7 +515,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>SQL, profiles and baselines.</h2>
+prompt <A NAME="profsnblines"></A><h2>SQL, profiles and baselines.</h2>
 set markup HTML ON ENTMAP ON
 
 set heading on
@@ -454,7 +535,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Executions, number of rows.</h2>
+prompt <A NAME="execsnrows"></A><h2>Executions, number of rows.</h2>
 set markup HTML ON ENTMAP ON
 
 select executions, parse_calls, loads, rows_processed, sorts
@@ -466,7 +547,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Response time, cpu time and wait time (in seconds).</h2>
+prompt <A NAME="respcpuwait"></A><h2>Response time, cpu time and wait time (in seconds).</h2>
 set markup HTML ON ENTMAP ON
 
 select trunc(elapsed_time/1000000,1) elapsed_time, trunc(application_wait_time/1000000,1) applic_wait_time, trunc(cpu_time/1000000,1) cpu_time
@@ -479,7 +560,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Memory and disk reads.</h2>
+prompt <A NAME="memndisk"></A><h2>Memory and disk reads.</h2>
 set markup HTML ON ENTMAP ON
 
 select buffer_gets, disk_reads, (sharable_mem+persistent_mem+runtime_mem) sql_area_used
@@ -510,7 +591,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Bind aware, sharable?</h2>
+prompt <A NAME="bindaware"></A><h2>Bind aware, sharable?</h2>
 set markup HTML ON ENTMAP ON
 
 col IS_OBSOLETE for a11
@@ -527,7 +608,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Adaptive cursor sharing.</h2>
+prompt <A NAME="adapcursh"></A><h2>Adaptive cursor sharing.</h2>
 set markup HTML ON ENTMAP ON
 
 col PREDICATE for a30
@@ -550,7 +631,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Bind mismatches.</h2>
+prompt <A NAME="bindmism"></A><h2>Bind mismatches.</h2>
 set markup HTML ON ENTMAP ON
 
 select *
@@ -578,7 +659,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Content of bind variabeles (use as example).</h2>
+prompt <A NAME="bindcontent"></A><h2>Content of bind variabeles (use as example).</h2>
 set markup HTML ON ENTMAP ON
 
 col name for a10
@@ -595,7 +676,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Bind variables as SQL*Plus commands.</h2>
+prompt <A NAME="bindsqlplus"></A><h2>Bind variables as SQL*Plus commands.</h2>
 set markup HTML ON ENTMAP ON
 
 set heading off
@@ -630,7 +711,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Values of bind variables of other childs.</h2>
+prompt <A NAME="bindsothers"></A><h2>Values of bind variables of other childs.</h2>
 set markup HTML ON ENTMAP ON
 
 set heading on
@@ -650,7 +731,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Execution plan of the query.</h2>
+prompt <A NAME="execplan"></A><h2>Execution plan of the query.</h2>
 
 set markup HTML OFF ENTMAP OFF
 
@@ -659,6 +740,7 @@ SELECT plan_table_output
 FROM   TABLE(DBMS_XPLAN.DISPLAY_CURSOR('&sql_id', &childnr, 'ALL'));
 prompt </pre>
 
+
 prompt
 prompt
 prompt
@@ -666,7 +748,7 @@ prompt
 set markup HTML ON ENTMAP OFF
 
 
-prompt <h2>Execution plan of the query from AWR.</h2>
+prompt <A NAME="execplanawr"></A><h2>Execution plan of the query from AWR.</h2>
 set markup HTML OFF ENTMAP OFF
 
 prompt <pre xml:space="preserve" class="oac_no_warn">
@@ -679,7 +761,7 @@ prompt
 set markup HTML ON ENTMAP OFF
 
 prompt
-prompt <h2>All execution plans in sql plan baselines.</h2>
+prompt <A NAME="blineallplans"></A><h2>All execution plans in sql plan baselines.</h2>
 prompt <p>Run as SYS to see this.</p>
 set markup HTML ON ENTMAP ON
 
@@ -705,7 +787,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Dropping associated SQL plan baselines.</h2>
+prompt <A NAME="blinedrop"></A><h2>Dropping associated SQL plan baselines.</h2>
 prompt <p>(Based on SQL_HANDLE gives an error, but works.
 prompt Not much success based on PLAN_NAME yet.)</p>
 
@@ -730,7 +812,7 @@ where signature in (select force_matching_signature
 prompt
 prompt
 prompt
-prompt <h2>Generated statement to purge your SQL statement from the shared pool.</h2>
+prompt <A NAME="planpurge"></A><h2>Generated statement to purge your SQL statement from the shared pool.</h2>
 
 select 'exec sys.dbms_shared_pool.purge('''||address||', '||hash_value||''', ''c'')'
 from v$sql
@@ -744,8 +826,203 @@ prompt
 prompt
 prompt
 prompt
+
 set markup HTML ON ENTMAP OFF
-prompt <h2>History of query response time.</h2>
+prompt <A NAME="tablestats"></A><h2>Tables accessed in the execution plan.</h2>
+set markup HTML ON ENTMAP ON
+
+set heading on
+
+SELECT owner, table_name, last_analyzed, sample_size, num_rows, avg_row_len, blocks, partitioned, global_stats
+FROM dba_tables
+WHERE table_name IN (
+	select distinct rtrim(substr(plan_table_output, instr(plan_table_output, '|', 1, 3)+2, (instr(plan_table_output, '|', 1, 4)-instr(plan_table_output, '|', 1, 3)-2)), ' ')
+	from (
+		SELECT plan_table_output
+		FROM   TABLE(DBMS_XPLAN.DISPLAY_CURSOR('&sql_id', &childnr, 'BASIC'))
+		   )
+	where plan_table_output like '%TABLE ACCESS%'
+  )
+ORDER BY owner, table_name
+/
+
+prompt
+prompt
+prompt
+
+set markup HTML ON ENTMAP OFF
+prompt <A NAME="tablestathis"></A><h2>Statistics history for tables accessed in the execution plan.</h2>
+set markup HTML ON ENTMAP ON
+
+SELECT ob.owner, ob.object_name, ob.subobject_name, ob.object_type, to_char(savtime, 'DD-MON-YY HH24:MI:SS') savtime, rowcnt, blkcnt, avgrln ,samplesize, analyzetime
+FROM sys.WRI$_OPTSTAT_TAB_HISTORY, dba_objects ob
+WHERE object_type in ('TABLE')
+AND   object_name IN (
+	select distinct rtrim(substr(plan_table_output, instr(plan_table_output, '|', 1, 3)+2, (instr(plan_table_output, '|', 1, 4)-instr(plan_table_output, '|', 1, 3)-2)), ' ')
+	from (
+		SELECT plan_table_output
+		FROM   TABLE(DBMS_XPLAN.DISPLAY_CURSOR('&sql_id', &childnr, 'BASIC'))
+		   )
+	where plan_table_output like '%TABLE ACCESS%'
+  )
+and object_id=obj#
+order by ob.owner, ob.object_name, analyzetime asc
+;
+
+prompt
+prompt
+prompt
+
+set markup HTML ON ENTMAP OFF
+prompt <A NAME="tabparts"></A><h2>Partitions of tables accessed in the execution plan.</h2>
+set markup HTML ON ENTMAP ON
+
+SELECT table_owner, table_name, partition_name, subpartition_count, last_analyzed, sample_size, num_rows, avg_row_len
+FROM dba_tab_partitions
+WHERE table_name IN (
+	select distinct rtrim(substr(plan_table_output, instr(plan_table_output, '|', 1, 3)+2, (instr(plan_table_output, '|', 1, 4)-instr(plan_table_output, '|', 1, 3)-2)), ' ')
+	from (
+		SELECT plan_table_output
+		FROM   TABLE(DBMS_XPLAN.DISPLAY_CURSOR('&sql_id', &childnr, 'BASIC'))
+		   )
+	where plan_table_output like '%TABLE ACCESS%'
+  )
+ORDER BY table_owner, table_name, partition_name
+/
+
+prompt
+prompt
+prompt
+
+set markup HTML ON ENTMAP OFF
+prompt <A NAME="indexstats"></A><h2>Indexes accessed in the execution plan.</h2>
+set markup HTML ON ENTMAP ON
+
+SELECT owner, index_name, table_name, last_analyzed, sample_size, num_rows, partitioned, global_stats
+FROM dba_indexes
+WHERE index_name IN (
+	select distinct rtrim(substr(plan_table_output, instr(plan_table_output, '|', 1, 3)+2, (instr(plan_table_output, '|', 1, 4)-instr(plan_table_output, '|', 1, 3)-2)), ' ')
+	from (
+		SELECT plan_table_output
+		FROM   TABLE(DBMS_XPLAN.DISPLAY_CURSOR('&sql_id', &childnr, 'BASIC'))
+		   )
+	where plan_table_output like '%INDEX%'
+  )
+ORDER BY owner, table_name, index_name
+/
+
+prompt
+prompt
+prompt
+
+set markup HTML ON ENTMAP OFF
+prompt <A NAME="indparts"></A><h2>Partitions of indexes accessed in the execution plan.</h2>
+set markup HTML ON ENTMAP ON
+
+SELECT index_owner, index_name, partition_name, subpartition_count, last_analyzed, sample_size, num_rows
+FROM dba_ind_partitions
+WHERE index_name IN (
+	select distinct rtrim(substr(plan_table_output, instr(plan_table_output, '|', 1, 3)+2, (instr(plan_table_output, '|', 1, 4)-instr(plan_table_output, '|', 1, 3)-2)), ' ')
+	from (
+		SELECT plan_table_output
+		FROM   TABLE(DBMS_XPLAN.DISPLAY_CURSOR('&sql_id', &childnr, 'BASIC'))
+		   )
+	where plan_table_output like '%INDEX%'
+  )
+ORDER BY index_owner, index_name, partition_name
+/
+
+prompt
+prompt
+prompt
+
+set markup HTML ON ENTMAP OFF
+prompt <A NAME="indstathis"></A><h2>Statistics history for indexes accessed in the execution plan.</h2>
+set markup HTML ON ENTMAP ON
+
+SELECT ob.owner, ob.object_name, ob.subobject_name, ob.object_type,to_char(savtime, 'DD-MON-YY HH24:MI:SS') savtime
+     , rowcnt, BLEVEL , LEAFCNT, DISTKEY, CLUFAC, samplesize, analyzetime
+FROM sys.WRI$_OPTSTAT_IND_HISTORY, dba_objects ob
+WHERE object_type in ('INDEX')
+AND object_name IN (
+	select distinct rtrim(substr(plan_table_output, instr(plan_table_output, '|', 1, 3)+2, (instr(plan_table_output, '|', 1, 4)-instr(plan_table_output, '|', 1, 3)-2)), ' ')
+	from (
+		SELECT plan_table_output
+		FROM   TABLE(DBMS_XPLAN.DISPLAY_CURSOR('&sql_id', &childnr, 'BASIC'))
+		   )
+	where plan_table_output like '%INDEX%'
+  )
+and object_id=obj#
+order by ob.owner, ob.object_name, analyzetime asc
+;
+
+
+
+prompt
+prompt
+prompt
+
+set markup HTML ON ENTMAP OFF
+prompt <A NAME="indcolstats"></A><h2>Statistics indexed columns for indexes used in the execution plan.</h2>
+set markup HTML ON ENTMAP ON
+
+SELECT ic.index_owner, ic.index_name, ic.table_name, ic.column_name, ic.column_position col_pos, tc.last_analyzed, tc. sample_size, tc.num_distinct, tc.num_nulls, tc.density, tc.histogram, tc.num_buckets
+FROM dba_ind_columns ic
+,    dba_tab_columns tc
+WHERE ic.index_name IN (
+	select distinct rtrim(substr(plan_table_output, instr(plan_table_output, '|', 1, 3)+2, (instr(plan_table_output, '|', 1, 4)-instr(plan_table_output, '|', 1, 3)-2)), ' ')
+	from (
+		SELECT plan_table_output
+		FROM   TABLE(DBMS_XPLAN.DISPLAY_CURSOR('&sql_id', &childnr, 'BASIC'))
+		   )
+	where plan_table_output like '%INDEX%'
+  )
+AND ic.table_owner=tc.owner
+AND ic.table_name=tc.table_name
+AND ic.column_name=tc.column_name
+ORDER BY ic.table_owner, ic.table_name, ic.index_name, ic.column_position
+/
+
+/* Query is too slow (~20 seconds) 
+prompt
+prompt
+prompt
+
+set markup HTML ON ENTMAP OFF
+prompt <h2>Statistics history for indexed columns for indexes used in the execution plan.</h2>
+set markup HTML ON ENTMAP ON
+
+SELECT ob.owner, ob.object_name,  col.COLUMN_NAME, to_char(his.savtime, 'DD-MON-YY HH24:MI:SS') savtime
+, his.NULL_CNT, his.DISTCNT, his.DENSITY, his.SAMPLE_DISTCNT, his.sample_size,  his.TIMESTAMP#
+FROM sys.WRI$_OPTSTAT_HISTHEAD_HISTORY his
+, dba_objects ob
+, dba_tab_columns col
+, dba_ind_columns ic
+WHERE ic.index_name IN (
+	select distinct rtrim(substr(plan_table_output, instr(plan_table_output, '|', 1, 3)+2, (instr(plan_table_output, '|', 1, 4)-instr(plan_table_output, '|', 1, 3)-2)), ' ')
+	from (
+		SELECT plan_table_output
+		FROM   TABLE(DBMS_XPLAN.DISPLAY_CURSOR('&sql_id', &childnr, 'BASIC'))
+		   )
+	where plan_table_output like '%INDEX%'
+  )
+AND ic.table_owner=col.owner
+AND ic.table_name=col.table_name
+AND ic.column_name=col.column_name
+and ob.object_type in ('TABLE')
+and ob.object_id=his.obj#
+and col.COLUMN_ID=his.INTCOL#
+and ob.object_name=col.TABLE_NAME
+and ob.owner=col.owner
+order by col.owner, col.table_name, ic.column_position, col.column_name, savtime asc
+;
+*/
+
+prompt
+prompt
+prompt
+set markup HTML ON ENTMAP OFF
+prompt <A NAME="rtimehis"></A><h2>History of query response time.</h2>
 set markup HTML ON ENTMAP ON
 
 alter session set NLS_TIMESTAMP_FORMAT = 'DD-MM-YYYY HH24:MI:SS.FF';
@@ -774,7 +1051,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Query response time graph.</h2>
+prompt <A NAME="rtimehisgraph"></A><h2>Query response time graph.</h2>
 
 
 prompt <div id="chart_div" style="width: 700px; height: 500px;"></div>
@@ -784,7 +1061,7 @@ prompt
 prompt
 prompt
 set markup HTML ON ENTMAP OFF
-prompt <h2>Query statistics (AWR).</h2>
+prompt <A NAME="rtimestats"></A><h2>Query statistics (AWR).</h2>
 
 prompt
 prompt
@@ -915,6 +1192,8 @@ and    b.sql_id='&sql_id'
 group by a.INSTANCE_NUMBER, b.PLAN_HASH_VALUE
 order by a.INSTANCE_NUMBER
 /
+
+
 spool off
 
-@/tmp/your_sqlplus_env_&datetime..sql
+@your_sqlplus_env_&datetime..sql
