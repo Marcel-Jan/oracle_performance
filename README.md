@@ -4,6 +4,7 @@ Scripts in this repository
 
 * sql_sql_id.sql - Retrieves a lot of information about a SQL statement, based on SQL_ID.
 * sql_sql_id_html.sql - Same as sql_sql_id.sql, but with HTML output. You need the Diagnostics Pack if you want to run this! It will run anyway, but usage will be counted as usage of AWR in dba_feature_usage_statistics!
+* stats_sql_id_html.sql - A script for table/index statistics for objects accessed in the execution plan. You need the Diagnostics Pack if you want to run this! It will run anyway, but usage will be counted as usage of AWR in dba_feature_usage_statistics!
 * sql_old_hash.sql - Similar to sql_sql_id.sql, to use if you don't have the sql_id, but do have the old hash values found in Statspack.
 * sql_plan_baselines.sql - Retrieves information concerning the use of SQL plan baselines.
 * trace_column.sql - If you quickly need to trace one or more sessions based on username, program or whatever in v$session.
