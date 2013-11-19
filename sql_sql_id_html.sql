@@ -19,12 +19,14 @@
 --      1.2     24 jun 2013 M. Krijgsman   Query statistics from AWR. sqlplus settings saved in /tmp
 --      1.3     25 okt 2013 M. Krijgsman   Table and index statistics for those that are found in the execution plan. Easier way
 --                                         to find what data you look for with a HTML menu
+--      1.4     19 nov 2013 M. Krijgsman   Bugfix: forgot the execution plan in the menu. Shorter scriptname.
+--                                         Bugfix: in bind variable data timestamp data wasn't shown. 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 column v_datetime    new_value datetime       noprint
 select to_char(sysdate, 'YYYYMMDDHH24MISS') v_datetime from dual;
 
-store set your_sqlplus_env_&datetime..sql REPLACE
+store set /tmp/your_sqlplus_env_&datetime..sql REPLACE
 
 set linesize 3000
 set feedback off
@@ -248,7 +250,7 @@ set markup HTML ON ENTMAP OFF
 prompt <h1>SQL report, based on sql_id.</h1>
 prompt <p>This file was created with:
 prompt sql_sql_id_html.sql
-prompt version 1.3 (2013)
+prompt version 1.4 (2013)
 prompt 
 prompt dbname: &l_dbname
 prompt SQL_ID: &sql_id
@@ -269,7 +271,13 @@ prompt 		<td nowrap align="center" width="25%"><a class="link" href="#qversions"
 prompt 		<td nowrap align="center" width="25%"><a class="link" href="#childs">Childs and hash values</a></td>  
 prompt 		<td nowrap align="center" width="25%"><a class="link" href="#sqltext">Full text of the query</a></td>  
 prompt 		<td nowrap align="center" width="25%"><a class="link" href="#sqltextawr">SQL text from AWR memory</a></td>  
-prompt 	</tr>  
+prompt 	</tr>
+prompt 	<tr>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#execplan">Execution plan (memory)</a></td>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#execplanawr">Execution plans (from AWR)</a></td>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#blineallplans">Execution plans (from baselines)</a></td>
+prompt 		<td nowrap align="center" width="25%"></td>
+prompt 	</tr>
 prompt  <tr><th colspan="4">SQL plan baselines and SQL profiles</th>
 prompt  </tr>
 prompt 	<tr>  
@@ -318,6 +326,7 @@ prompt 	<tr>
 prompt 		<td nowrap align="center" width="25%"><a class="link" href="#indparts">Index partitions</a></td>
 prompt 		<td nowrap align="center" width="25%"><a class="link" href="#indstathis">Index statistics history</a></td>
 prompt 		<td nowrap align="center" width="25%"><a class="link" href="#indcolstats">Indexed column statistics</a></td>
+prompt 		<td nowrap align="center" width="25%"></td>
 prompt 	</tr>
 prompt  <tr><th colspan="4">Response time history</th>
 prompt  </tr>
@@ -325,6 +334,7 @@ prompt 	<tr>
 prompt 		<td nowrap align="center" width="25%"><a class="link" href="#rtimehis">Response time history</a></td>
 prompt 		<td nowrap align="center" width="25%"><a class="link" href="#rtimehisgraph">Response time history graph</a></td>
 prompt 		<td nowrap align="center" width="25%"><a class="link" href="#rtimestats">AWR responsetime statistics</a></td>
+prompt 		<td nowrap align="center" width="25%"></td>
 prompt 	</tr>
 prompt </table>
 prompt </center>  
@@ -415,7 +425,7 @@ prompt <A NAME="sqltext"></A><h2>Full text of the query (up to 50000 characters)
 set markup HTML ON ENTMAP ON
 
 set long 50000
-col sql_fulltext for a1000
+col sql_fulltext for a4000
 
 select sql_fulltext
 from v$sql
@@ -429,6 +439,7 @@ set markup HTML ON ENTMAP OFF
 prompt <A NAME="sqltextawr"></A><h2>SQL text from AWR memory (just in case it is not in memory anymore.)</h2>
 set markup HTML ON ENTMAP ON
 
+col sql_text for a4000
 
 select *
 from sys.WRH$_SQLTEXT 
@@ -663,10 +674,16 @@ prompt <A NAME="bindcontent"></A><h2>Content of bind variabeles (use as example)
 set markup HTML ON ENTMAP ON
 
 col name for a10
-col value_string for a30
-col datatype_string for a20
+col value_string for a50
+col datatype_string for a50
 
-select child_number, name, position, value_string, datatype_string
+select child_number, name, position
+, case datatype
+            when 180 then to_char(anydata.accesstimestamp(value_anydata),'DD-MON-YYYY HH24:MI:SS')
+            when  12 then to_char(anydata.accessdate(value_anydata),'DD-MON-YYYY HH24:MI:SS')
+            else value_string
+       end value_string
+, datatype_string
 from v$sql_bind_capture
 where sql_id='&sql_id'
 and child_number=&childnr
@@ -681,7 +698,7 @@ set markup HTML ON ENTMAP ON
 
 set heading off
 
-select 'variable '||replace(name, ':', 'BIND_')||' '||datatype_string
+select 'variable '||replace(name, ':', 'BIND_')||' '||decode(datatype_string, 'TIMESTAMP', 'VARCHAR2(128)', datatype_string) datatype_string
 from v$sql_bind_capture
 where sql_id='&sql_id'
 and child_number=&childnr
@@ -689,20 +706,34 @@ order by position;
 
 prompt
 
-select 'exec '||replace(name, ':', ':BIND_')||' := '||value_string
+select 'exec '||replace(name, ':', ':BIND_')||' := '||
+case datatype
+            when 180 then to_char(anydata.accesstimestamp(value_anydata),'DD-MON-YYYY HH24:MI:SS')
+            when  12 then to_char(anydata.accessdate(value_anydata),'DD-MON-YYYY HH24:MI:SS')
+            else value_string
+       end value_string
 from v$sql_bind_capture
 where sql_id='&sql_id'
 and child_number=&childnr
 and datatype_string NOT LIKE '%CHAR%'
-and datatype_string NOT IN ('DATE', 'CLOB')
+and datatype_string NOT IN ('DATE', 'CLOB', 'TIMESTAMP')
 order by position;
 
 select 'exec '||replace(name, ':', ':BIND_')||' := '''||value_string||''''
+from (
+select name
+, case datatype
+            when 180 then to_char(anydata.accesstimestamp(value_anydata),'DD-MON-YYYY HH24:MI:SS')
+            when  12 then to_char(anydata.accessdate(value_anydata),'DD-MON-YYYY HH24:MI:SS')
+            else value_string
+       end value_string
+, position
 from v$sql_bind_capture
 where sql_id='&sql_id'
 and child_number=&childnr
 and (datatype_string LIKE '%CHAR%'
-     OR datatype_string IN ('DATE', 'CLOB'))
+     OR datatype_string IN ('DATE', 'CLOB', 'TIMESTAMP'))
+)
 order by position;
 
 
@@ -716,10 +747,16 @@ set markup HTML ON ENTMAP ON
 
 set heading on
 col name for a10
-col value_string for a30
-col datatype_string for a20
+col value_string for a50
+col datatype_string for a50
 
-select child_number, name, position, value_string, datatype_string
+select child_number, name, position
+, case datatype
+            when 180 then to_char(anydata.accesstimestamp(value_anydata),'DD-MON-YYYY HH24:MI:SS')
+            when  12 then to_char(anydata.accessdate(value_anydata),'DD-MON-YYYY HH24:MI:SS')
+            else value_string
+       end value_string
+, datatype_string
 from v$sql_bind_capture
 where sql_id='&sql_id'
 and child_number <> &childnr
@@ -1196,4 +1233,4 @@ order by a.INSTANCE_NUMBER
 
 spool off
 
-@your_sqlplus_env_&datetime..sql
+@/tmp/your_sqlplus_env_&datetime..sql
