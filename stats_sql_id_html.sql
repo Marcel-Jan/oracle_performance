@@ -17,12 +17,13 @@
 --      Version When        Who            What?
 --      ------- ----------- -------------- ----------------------------------------------------------------------------------------------
 --      1.0     Oct 29 2013 M. Krijgsman   First version, based on sql_sql_id_html.sql
+--      1.1     Nov 19 2013 M. Krijgsman   Tiny little bugfix (removing annoying spaces in sql_fulltext)
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 column v_datetime    new_value datetime       noprint
 select to_char(sysdate, 'YYYYMMDDHH24MISS') v_datetime from dual;
 
-store set your_sqlplus_env_&datetime..sql REPLACE
+store set /tmp/your_sqlplus_env_&datetime..sql REPLACE
 
 set linesize 3000
 set feedback off
@@ -43,7 +44,7 @@ select lower(name) vl_dbname from v$database;
 
 prompt =============================================
 prompt =                                           =
-prompt =           stats_sql_id_html.sql           =
+prompt =            stats_sql_id_html.sql          =
 prompt =  This script will retrieve data on stats  =
 prompt =    on objects in execution plans found    =
 prompt =                 by sql_id                 =
@@ -112,7 +113,7 @@ prompt
 
 
 
-spool /stats_&l_dbname._&sql_id._&datetime..html
+spool stats_&l_dbname._&sql_id._&datetime..html
 
 /* head '-
   <title>SQL report for &sql_id on &l_dbname</title> -
@@ -173,7 +174,7 @@ set markup HTML ON ENTMAP OFF
 prompt <h1>Stats report, based on sql_id.</h1>
 prompt <p>This file was created with:
 prompt stats_sql_id_html.sql
-prompt version 1.0 (2013)
+prompt version 1.1 (2013)
 prompt 
 prompt dbname: &l_dbname
 prompt SQL_ID: &sql_id
@@ -284,7 +285,7 @@ prompt <A NAME="sqltext"></A><h2>Full text of the query (up to 50000 characters)
 set markup HTML ON ENTMAP ON
 
 set long 50000
-col sql_fulltext for a1000
+col sql_fulltext for a4000
 
 select sql_fulltext
 from v$sql
@@ -716,4 +717,4 @@ order by col.owner, col.table_name, ic.column_position, col.column_name, his.TIM
 
 spool off
 
-@your_sqlplus_env_&datetime..sql
+@/tmp/your_sqlplus_env_&datetime..sql
