@@ -835,8 +835,7 @@ prompt
 prompt
 set markup HTML ON ENTMAP OFF
 prompt <A NAME="blinedrop"></A><h2>Dropping associated SQL plan baselines.</h2>
-prompt <p>(Based on SQL_HANDLE gives an error, but works.
-prompt Not much success based on PLAN_NAME yet.)</p>
+prompt <p>(Based on SQL_HANDLE gives an error, but works.</p>
 
 
 select distinct 'select sys.dbms_spm.DROP_SQL_PLAN_BASELINE('''||sql_handle||''') from dual;' "Based on SQL_HANDLE"
