@@ -22,6 +22,8 @@
 --      1.4     19 nov 2013 M. Krijgsman   Bugfix: forgot the execution plan in the menu. Shorter scriptname.
 --                                         Bugfix: in bind variable data timestamp data wasn't shown. 
 --      1.5     09 jan 2014 M. Krijgsman   When searching for stats history, execution plans in AWR are now also taken into account.
+--      1.6     28 jan 2014 M. Krijgsman   Bind info from AWR. Yes! Also added other info from dba_hist_sqlstat in query history, amongst 
+--                                         which parallellism.
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 column v_datetime    new_value datetime       noprint
@@ -48,7 +50,7 @@ select lower(name) vl_dbname from v$database;
 
 prompt =============================================
 prompt =                                           =
-prompt =                sqlperf.sql                =
+prompt =              sqlperf.sql                =
 prompt =  This script will retrieve all kinds of   =
 prompt =  information about SQLs based on sql_id   =
 prompt =                                           =
@@ -251,7 +253,7 @@ set markup HTML ON ENTMAP OFF
 prompt <h1>SQL report, based on sql_id.</h1>
 prompt <p>This file was created with:
 prompt sqlperf.sql
-prompt version 1.5 (2013)
+prompt version 1.6 (2014)
 prompt 
 prompt dbname: &l_dbname
 prompt SQL_ID: &sql_id
@@ -333,8 +335,14 @@ prompt  <tr><th colspan="4">Response time history</th>
 prompt  </tr>
 prompt 	<tr>  
 prompt 		<td nowrap align="center" width="25%"><a class="link" href="#rtimehis">Response time history</a></td>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#rtimehisdet">Query history - details</a></td>
+prompt 		<td nowrap align="center" width="25%"><a class="link" href="#rtimehisbind">Query history - binds</a></td>
 prompt 		<td nowrap align="center" width="25%"><a class="link" href="#rtimehisgraph">Response time history graph</a></td>
+prompt 	</tr>
+prompt 	<tr>  
 prompt 		<td nowrap align="center" width="25%"><a class="link" href="#rtimestats">AWR responsetime statistics</a></td>
+prompt 		<td nowrap align="center" width="25%"></td>
+prompt 		<td nowrap align="center" width="25%"></td>
 prompt 		<td nowrap align="center" width="25%"></td>
 prompt 	</tr>
 prompt </table>
@@ -456,8 +464,9 @@ set markup HTML ON ENTMAP ON
 col sql_id for a20
 col plan_name for a35
 col created for a30
+col FORCE_MATCHING_SIGNATURE for 9999999999999999999
 
-select sql.sql_id, sql.child_number, sql.inst_id, sql.force_matching_signature, bl.plan_name, bl.enabled, bl.accepted, bl.fixed, bl.optimizer_cost
+select sql.sql_id, sql.child_number, sql.inst_id, sql.force_matching_signature, sql.plan_hash_value, bl.plan_name, bl.enabled, bl.accepted, bl.fixed, bl.optimizer_cost
 from gv$sql sql
 ,    dba_sql_plan_baselines bl
 where sql.sql_id='&sql_id'
@@ -839,7 +848,7 @@ where signature in (select force_matching_signature
 
 prompt
 
-select 'select sys.dbms_spm.DROP_SQL_PLAN_BASELINE(''plan_name=>'||plan_name||''') from dual;' "Based on PLAN_NAME"
+select 'declare   v_pls PLS_INTEGER; BEGIN   v_pls :=dbms_spm.drop_sql_plan_baseline(sql_handle=>'''||sql_handle||''', plan_name=>'''||plan_name||'''); END;'
 from dba_sql_plan_baselines
 where signature in (select force_matching_signature
                     from v$sql
@@ -1087,10 +1096,13 @@ col BEGIN_INTERVAL_TIME for a40
 col FORCE_MATCHING_SIGNATURE for 9999999999999999999999
 select a.BEGIN_INTERVAL_TIME
 ,  a.INSTANCE_NUMBER
- , b.PLAN_HASH_VALUE
- , b.FORCE_MATCHING_SIGNATURE
- , b.executions_delta
- , round(b.ELAPSED_TIME_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000,2) "Elapsed time (sec.)" 
+, b.PLAN_HASH_VALUE
+, b.FORCE_MATCHING_SIGNATURE F_MATCHING_SIGN
+, b.SQL_PROFILE
+, b.executions_delta EXEC_DELTA
+, round(b.ELAPSED_TIME_DELTA/decode(b.EXECUTIONS_DELTA,0,1,b.EXECUTIONS_DELTA)/1000000,2) "Elapsed time (sec.)" 
+, b.PX_SERVERS_EXECS_TOTAL PX_SERV_TOT
+, b.PX_SERVERS_EXECS_DELTA PX_SERV_DELTA
 from   dba_hist_snapshot a, 
        dba_hist_sqlstat b 
 where  a.snap_id=b.snap_id 
@@ -1099,7 +1111,59 @@ and    b.sql_id='&sql_id'
 order by a.BEGIN_INTERVAL_TIME
 /
 
+prompt
+prompt
+prompt
+set markup HTML ON ENTMAP OFF
+prompt <A NAME="rtimehisdet"></A><h2>History of query details.</h2>
+set markup HTML ON ENTMAP ON
 
+select a.BEGIN_INTERVAL_TIME
+,  a.INSTANCE_NUMBER
+, b.PLAN_HASH_VALUE
+, b.OPTIMIZER_COST
+, b.LOADED_VERSIONS
+, b.VERSION_COUNT
+, b.MODULE
+, b.ACTION
+from   dba_hist_snapshot a, 
+       dba_hist_sqlstat b 
+where  a.snap_id=b.snap_id 
+and    a.instance_number=b.instance_number
+and    b.sql_id='&sql_id' 
+order by a.BEGIN_INTERVAL_TIME
+/
+
+prompt
+prompt
+prompt
+set markup HTML ON ENTMAP OFF
+prompt <A NAME="rtimehisbind"></A><h2>History of query - binds.</h2>
+set markup HTML ON ENTMAP ON
+
+col DATATYPE_STRING for a30
+col VALUE_STRING for a30
+
+select a.BEGIN_INTERVAL_TIME
+,  a.INSTANCE_NUMBER
+, b.PLAN_HASH_VALUE
+, b.INVALIDATIONS_TOTAL
+, c.POSITION
+, c.DATATYPE_STRING
+, case c.datatype
+            when 180 then to_char(anydata.accesstimestamp(c.value_anydata),'DD-MON-YYYY HH24:MI:SS')
+            when  12 then to_char(anydata.accessdate(c.value_anydata),'DD-MON-YYYY HH24:MI:SS')
+            else c.value_string
+  end value_string
+from   dba_hist_snapshot a, 
+       dba_hist_sqlstat b,
+       table(dbms_sqltune.extract_binds(b.bind_data)) c
+where  a.snap_id=b.snap_id 
+and    a.instance_number=b.instance_number
+and    b.sql_id='&sql_id'
+and    b.bind_data is not null
+order by a.BEGIN_INTERVAL_TIME, c.POSITION
+/
 
 prompt
 prompt
