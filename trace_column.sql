@@ -17,12 +17,12 @@
 --      Please give the column name in v$session: sid
 --
 --      Please give the value you are looking for: 148
---      old   3: where &kolomnaam = '&trace_value'
+--      old   3: where &v_columnname = '&trace_value'
 --      new   3: where sid = '148'
 --      
 --      exec dbms_monitor.session_trace_enable(148, 7733, TRUE, TRUE);
 --      
---      old   3: where &kolomnaam = '&trace_value'
+--      old   3: where &v_columnname = '&trace_value'
 --      new   3: where sid = '148'
 --      
 --      exec dbms_monitor.session_trace_disable(148, 7733);
@@ -34,12 +34,12 @@
 --      
 --      Please give the column name in v$session: username
 --      Please give the value you are looking for: OWS
---      old   3: where &kolomnaam = '&trace_value'
+--      old   3: where &v_columnname = '&trace_value'
 --      new   3: where username = 'OWS'
 --      
 --      exec dbms_monitor.session_trace_enable(148, 7733, TRUE, TRUE);
 --      
---      old   3: where &kolomnaam = '&trace_value'
+--      old   3: where &v_columnname = '&trace_value'
 --      new   3: where username = 'OWS'
 --      
 --      exec dbms_monitor.session_trace_disable(148, 7733);
@@ -49,11 +49,25 @@
 --      ------- ----------- -------------- ----------------------------------------------------------------------------------------------
 --      1.0     04 apr 2012 M. Krijgsman   Initial
 --      1.1     17 dec 2012 M. Krijgsman   trace identifier added.
+--      1.2     May 18 2015 M. Krijgsman   Generated .sql files are spooled to /tmp. trace_identifier now really works :)
+--      1.3     May 19 2015 M. Krijgsman   After chosing the column name, you see what values are in that column.
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
+set linesize 3000
+set verify off
 
-accept kolomnaam    default '' -
+
+
+accept v_columnname    default '' -
   prompt 'Please give the column name in v$session: '
+
+col &v_columnname for a50
+
+select &v_columnname, count(*)
+from v$session
+group by &v_columnname
+order by &v_columnname;
+
 
 accept trace_value    default '' -
   prompt 'Please give the value you are looking for: '
@@ -65,26 +79,26 @@ accept traceid    default '' -
 set heading off
 set lines 132 pages 9999
 
-spool trace_&kolomnaam._&trace_value._on.sql
+spool /tmp/trace_&v_columnname._&trace_value._on.sql
 
-prompt alter session set tracefile_identifier='&traceid';
+prompt alter session set tracefile_identifier='&traceid';;
 prompt 
 select 'exec dbms_monitor.session_trace_enable('||sid||', '||serial#||', TRUE, TRUE);'
 from v$session
-where &kolomnaam = '&trace_value';
+where &v_columnname = '&trace_value';
 
 spool off
 
-spool trace_&kolomnaam._&trace_value._off.sql
+spool /tmp/trace_&v_columnname._&trace_value._off.sql
 
 select 'exec dbms_monitor.session_trace_disable('||sid||', '||serial#||');'
 from v$session
-where &kolomnaam = '&trace_value';
+where &v_columnname = '&trace_value';
 
 spool off
 
 
-@trace_&kolomnaam._&trace_value._on.sql
+@/tmp/trace_&v_columnname._&trace_value._on.sql
 
 
 set heading on
