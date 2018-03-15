@@ -2,6 +2,8 @@
 
 Welcome to my repository of Oracle performance scripts. I've used them a lot in the past when I was an Oracle DBA and they helped me solve many performance issues. 
 
+Unfortunately I won't update these scripts anymore. After 20 years I left the world of Oracle and became a Hadoop specialist in March 2017. Read more about my new adventures here: http://marcel-jan.eu/datablog
+
 
 ## Scripts in this repository
 
